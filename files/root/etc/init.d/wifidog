@@ -1,0 +1,92 @@
+#!/bin/sh /etc/rc.common
+
+START=65
+STOP=65
+
+USE_PROCD=1
+NAME=wifidog
+PROG=/usr/bin/wifidog
+CONF=/tmp/wifidog.conf
+
+config_load() {
+	wifidog_enable=$(uci get wifidog.settings.wifidog_enable)
+	offline_enable=$(uci get wifidog.settings.offline_enable)
+	if [[ "$wifidog_enable" -eq 0 ]]; then
+		stop
+		exit 0
+	else
+
+	rm -f /etc/wifidog.conf
+	gateway_interface=$(uci get wifidog.settings.gateway_interface)
+	gateway_address=$(uci get wifidog.settings.gateway_address)
+	gateway_eninterface=$(uci get wifidog.settings.gateway_eninterface)
+	gateway_host=$(uci get wifidog.settings.gateway_host)
+	gateway_httpport=$(uci get wifidog.settings.gateway_httpport)
+	gateway_path=$(uci get wifidog.settings.gateway_path)
+	gateway_connmax=$(uci get wifidog.settings.gateway_connmax)
+	ssl_enable=$(uci get wifidog.settings.ssl_enable)
+	check_interval=$(uci get wifidog.settings.check_interval)
+	client_timeout=$(uci get wifidog.settings.client_timeout)
+	sslport=$(uci get wifidog.settings.sslport)
+	deamo_enable=$(uci get wifidog.settings.deamo_enable)
+	gatewayport=$(uci get wifidog.settings.gatewayport)
+	myz_mac=$(uci get wifidog.settings.myz_mac)
+	bmd_url=$(uci get wifidog.settings.bmd_url)
+
+echo "
+GatewayInterface $gateway_interface
+GatewayAddress $gateway_address
+AuthServer {
+	Hostname $gateway_host
+	SSLAvailable $ssl_enable
+	SSLPort $sslport
+	HTTPPort $gateway_httpport
+	Path $gateway_path
+	}
+Daemon $deamo_enable
+GatewayPort $gatewayport
+CheckInterval $check_interval
+ClientTimeout $client_timeout
+HTTPDMaxConn $gateway_connmax
+TrustedMACList $myz_mac
+
+FirewallRuleSet global {
+}
+
+FirewallRuleSet validating-users {
+	FirewallRule allow to 0.0.0.0/0
+}
+
+FirewallRuleSet known-users {
+	FirewallRule allow to 0.0.0.0/0
+}
+
+FirewallRuleSet unknown-users {
+	FirewallRule allow udp port 53
+	FirewallRule allow tcp port 53
+	FirewallRule allow udp port 67
+	FirewallRule allow tcp port 67
+}
+
+FirewallRuleSet locked-users {
+	FirewallRule block to 0.0.0.0/0
+}
+" >> $CONF
+	fi
+}
+
+start_service() {
+	config_load
+
+	procd_open_instance "wifidog"
+	procd_set_param command $PROG -c $CONF -f -s
+	procd_set_param file $CONF
+	procd_close_instance
+	sleep 2
+	iptables -t filter -A  WiFiDog_${gateway_interface}_AuthServers -d $bmd_url -j ACCEPT
+	iptables -t nat -A WiFiDog_${gateway_interface}_AuthServers  -d $bmd_url -j ACCEPT
+}
+
+service_triggers() {
+	procd_add_config_trigger "config.change" "wifidog" /etc/init.d/wifidog restart
+}
